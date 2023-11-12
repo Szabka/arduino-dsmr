@@ -214,18 +214,10 @@ namespace dsmr
       while (max_decimals--)
         value *= 10;
 
-      if (unit && *unit)
-      {
-        if (num_end >= end || *num_end != '*')
-          return res.fail("Missing unit", num_end);
-        const char *unit_start = ++num_end; // skip *
-        while (num_end < end && *num_end != ')' && *unit)
-        {
-          if (*num_end++ != *unit++)
-            return res.fail(INVALID_UNIT, unit_start);
-        }
-        if (*unit)
-          return res.fail(INVALID_UNIT, unit_start);
+      if (unit && *unit)   {
+    	while (num_end < end && *num_end != ')') {
+    		num_end++;
+    	}
       }
 
       if (num_end >= end || *num_end != ')')
@@ -360,8 +352,6 @@ namespace dsmr
         {
           return res.fail("Checksum mismatch", data_end + 1);
         }
-        res = parse_data(data, data_start, data_end, unknown_error);
-        res.next = check_res.next;
       }
       else
       {
@@ -369,11 +359,10 @@ namespace dsmr
         {
           ++data_end;
         }
-
-        res = parse_data(data, data_start, data_end, unknown_error);
-        res.next = data_end;
       }
 
+      res = parse_data(data, data_start, data_end, unknown_error);
+      res.next = data_end;
       return res;
     }
 
@@ -418,21 +407,36 @@ namespace dsmr
         ++line_end;
       }
 
-      // Parse data lines
-      while (line_end < end)
-      {
-        if (*line_end == '\r' || *line_end == '\n')
-        {
-          ParseResult<void> tmp = parse_line(data, line_start, line_end, unknown_error);
-          if (tmp.err)
-            return tmp;
-          line_start = line_end + 1;
-        }
+      // Parse data blocks
+      // each data block has to contain at least an opening ( and closed with a pair ) and \r\n at the end
+      while (line_start < end && ( *line_start == '\r' || *line_start == '\n')) line_start++;
+      line_end = line_start;
+      int pstate=0; // 0 == not found the ( yet, >1 have this amount of opened ( // block ends with 1->0 transition
+      while (line_end < end) {
+    	 // always happening
+   		 if (*line_end == '(') {
+   			pstate++;
+   		 } else if (*line_end == ')') {
+   			 if (pstate == 1) { // this block ending bracket
+ 		      line_end++;
+   		      if (line_end >= end || *line_end != '\r')
+   		        return res.fail("data block not CRLF terminated", line_end);
+   	          ParseResult<void> tmp = parse_line(data, line_start, line_end, unknown_error);
+   	          if (tmp.err)
+   	            return tmp;
+
+   	          line_end++; // skip to the \n;
+   	          line_start = line_end;
+   	          if (line_end < end) // not the end new block atsrt
+   	            line_start++;
+   			 }
+			 pstate--;
+   		 }
         line_end++;
       }
 
       if (line_end != line_start)
-        return res.fail("Last dataline not CRLF terminated", line_end);
+        return res.fail("Last data block not CRLF terminated", line_end);
 
       return res;
     }
